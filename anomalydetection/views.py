@@ -1,51 +1,78 @@
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
 from anomalydetection.forms.views import MahalanobisCreateForm
+import json, csv, re, time, os
+from datetime import datetime
+from anomalydetection.settings import DATA_DIR
+
 
 #method view
 
 # def index(request):
+
 #     if request.method == "POST":
 #         form = MahalanobisCreateForm(request.POST, request.FILES)
 #         if form.is_valid():
 #             print(request.FILES['nama'])
-#     return render(request, 'base/mahalanobis/index.html', {'form':MahalanobisCreateForm})
-    
-def index(request):
-    data = {}
-    if "GET" == request.method:
-        return render(request, "base/mahalanobis/index.html", data)
-        # if not GET, then proceed with processing
-        try:
-            csv_file = request.FILES["csv_file"]
-            if not csv_file.name.endswith('.csv'):
-            messages.error(request,'File is not CSV type')
-            return HttpResponseRedirect(reverse("base/mahalanobis/index.html"))
-            #if file is too large, return message
-            if csv_file.multiple_chunks():
-            messages.error(request,"Uploaded file is too big (%.2f MB)." % (csv_file.size/(1000*1000),))
-            return HttpResponseRedirect(reverse("base/mahalanobis/index.html"))
-               file_data = csv_file.read().decode("utf-8")          
+#     return render(request, 'base/mahalanobis/chart.html', {'form':MahalanobisCreateForm})
 
-               lines = file_data.split("\n")
-            #loop over the lines and save them in db. If error shows up , store as string and then display
-            for line in lines:                                           
-            fields = line.split(",")
-            data_dict = {}
-            data_dict["name"] = fields[0]
-            data_dict["nrp"] = fields[1]
-            try:
-            form = EventsForm(data_dict)
-            if form.is_valid():
-            form.save()                                   
-            else:
-            logging.getLogger("error_logger").error(form.errors.as_json())                                                                                     
-            except Exception as e:
-            logging.getLogger("error_logger").error(repr(e))                              
-            pass
+def insert(request):
+    class Data:
+        def __init__(self, time, abpmean, hr, pulse, resp, spo2, kelas):
+            self.time = time
+            self.abpmean = abpmean
+            self.hr = hr
+            self.pulse = pulse
+            self.resp = resp
+            self.spo2 = spo2
+            self.kelas = kelas
 
-        except Exception as e:
-            logging.getLogger("error_logger").error("Unable to upload file. "+repr(e))
-            messages.error(request,"Unable to upload CVS file. "+repr(e))
+    datay = []        
+    abpmean = []
+    hr = []
+    pulse = []
+    resp = []
+    spo2 = []
 
-                    return HttpResponseRedirect(reverse("base/mahalanobis/index.html"))
+    if request.method == 'POST':        
+        for row in request.FILES['docfile']:
+            data = str(row)                        
+            data = data.strip("b'")
+            # data = data.strip()            
+            data = list(data.split(","))
+            temp = {"time":data[0],"abpmean":data[1],"hr":data[2],"pulse":data[3],"resp":data[4],"spo2":data[5],"kelas":data[6].replace("\r\n","")}
+            datay.append({"s1":data[0].replace('"','').replace("'",""),"s2":data[1],"s3":data[2], "s4":data[3], "s5":data[4], "s6":data[5],"s7":data[6].replace('\\r\\n"','') }) #Cara 1
+            datay.append(temp)                     
+            times = data[0].replace('"','').replace("'","")
+            times = datetime.strptime(times, "%H:%M:%S %d/%m/%Y")            
+            times = times.timetuple()            
+            times = time.mktime(times)
+
+            abpmean.append([int(times), float(data[1])])
+            hr.append([int(times), float(data[2])])
+            pulse.append([int(times), float(data[3])])
+            resp.append([int(times), float(data[4])])
+            spo2.append([int(times), float(data[5])])
+        
+        with open(os.path.join(DATA_DIR, 'abpmean.json'),'r+') as abpmeanjson:
+            abpmeanjson.write(str(abpmean))
+
+        with open(os.path.join(DATA_DIR, 'hr.json'),'r+') as hrjson:
+            hrjson.write(str(hr))
+
+
+        with open(os.path.join(DATA_DIR, 'pulse.json'),'r+') as pulsejson:
+            pulsejson.write(str(pulse))
+
+        with open(os.path.join(DATA_DIR, 'resp.json'),'r+') as respjson:
+            respjson.write(str(resp))
+
+        with open(os.path.join(DATA_DIR, 'spo2.json'),'r+') as spo2json:
+            spo2json.write(str(spo2))
+        
+        
+
+        # return render(request, 'base/mahalanobis/chart.html')     
+
+    return render(request, 'base/mahalanobis/index.html', {'data':str(abpmean), 'data_table':datay})     
+            
